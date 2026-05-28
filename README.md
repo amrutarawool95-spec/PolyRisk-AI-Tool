@@ -44,5 +44,5 @@ Ensure you have **Python 3.10+** configured on your local workstation before run
 
 ### 1. Clone the Repository
 ```bash
-git clone [https://github.com/YOUR_USERNAME/polyrisk-ai.git](https://github.com/YOUR_USERNAME/polyrisk-ai.git)
+git clone [https://github.com/amrutarawool95-spec/polyrisk-ai.git](https://github.com/YOUR_USERNAME/polyrisk-ai.git)
 cd polyrisk-ai
