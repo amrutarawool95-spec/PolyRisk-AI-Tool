@@ -3,18 +3,19 @@ import pandas as pd
 import numpy as np
 import joblib
 
-# [span_152](start_span)Engineering pipelines import mappings[span_152](end_span)
-[span_153](start_span)from vcf_parser import parse_vcf, parse_csv_variants[span_153](end_span)
-[span_154](start_span)from qc_pipeline import apply_qc[span_154](end_span)
-[span_155](start_span)from feature_engineering import build_feature_matrix[span_155](end_span)
-[span_156](start_span)from prs_calculator import compute_prs, prs_percentile[span_156](end_span)
-[span_157](start_span)from ml_classifier import train_risk_model, predict_risk[span_157](end_span)
-[span_158](start_span)from shap_explainer import explain_prediction[span_158](end_span)
+# Engineering pipelines import mappings
+from vcf_parser import parse_vcf, parse_csv_variants
+from qc_pipeline import apply_qc
+from feature_engineering import build_feature_matrix
+from prs_calculator import compute_prs, prs_percentile
+from ml_classifier import train_risk_model, predict_risk
+from shap_explainer import explain_prediction
 from visualizations import prs_distribution_chart, manhattan_variant_plot, shap_waterfall_plotly
-[span_159](start_span)from report_generator import generate_pdf_report[span_159](end_span)
+from report_generator import generate_pdf_report
 
 # 1. PAGE SETUP WITH FUTURISTIC BIO-TECH THEME
-[span_160](start_span)st.set_page_config(page_title="PolyRisk AI // Platform", layout="wide", page_icon="🧬")[span_160](end_span)
+st.set_page_config(page_title="PolyRisk AI // Platform", layout="wide", page_icon="🧬")
+
 
 # Custom CSS Injection for Glassmorphism & Cyberpunk Accents
 st.markdown("""
