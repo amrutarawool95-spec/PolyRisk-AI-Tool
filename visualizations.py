@@ -16,7 +16,7 @@ def plot_manhattan(df):
     )
     fig.update_layout(
         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        xaxis_title="Chromosomal Position Coordinate", yxaxis_title="-log10(p-value)"
+        xaxis_title="Chromosomal Position Coordinate", yaxis_title="-log10(p-value)"
     )
     return fig
 
