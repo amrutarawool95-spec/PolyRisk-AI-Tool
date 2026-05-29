@@ -1,257 +1,267 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import joblib
-
-# Engineering pipelines import mappings
+import plotly.express as px
+import plotly.graph_objects as go
 from vcf_parser import parse_vcf, parse_csv_variants
-from qc_pipeline import apply_qc
+from qc_pipeline import run_quality_control
 from feature_engineering import build_feature_matrix
-from prs_calculator import compute_prs, prs_percentile
-from ml_classifier import train_risk_model, predict_risk
-from shap_explainer import explain_prediction
-from visualizations import prs_distribution_chart, manhattan_variant_plot, shap_waterfall_plotly
+from prs_calculator import calculate_prs_score
+from ml_classifier import predict_disease_risk
+from shap_explainer import generate_shap_values
+from visualizations import plot_manhattan, plot_cohort_distribution
 from report_generator import generate_pdf_report
 
-# 1. PAGE SETUP WITH FUTURISTIC BIO-TECH THEME
-st.set_page_config(page_title="PolyRisk AI // Platform", layout="wide", page_icon="🧬")
+# -------------------------------------------------------------
+# 1. PLATFORM CONFIGURATION & CONFIG MATRIX
+# -------------------------------------------------------------
+st.set_page_config(
+    page_title="PolyRisk AI // Computational Genome Engine",
+    page_icon="🧬",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# Custom CSS Injection for Glassmorphism & Cyberpunk Accents
+# Custom inject glassmorphic theme styling variables 
 st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght=300;400;700&family=Plus+Jakarta+Sans:wght=300;400;600;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght=300;400;600;700&family=JetBrains+Mono:wght=300;400;500&display=swap');
     
-    /* Global Overrides */
     html, body, [data-testid="stAppViewContainer"] {
-        background: linear-gradient(135deg, #050515 0%, #0b0b28 100%) !important;
-        font-family: 'Plus Jakarta Sans', sans-serif !important;
+        background-color: #050515 !important;
         color: #e0e6ed !important;
+        font-family: 'Space Grotesk', sans-serif !important;
     }
-    
     [data-testid="stSidebar"] {
-        background-color: rgba(10, 10, 35, 0.6) !important;
+        background-color: rgba(10, 10, 30, 0.7) !important;
+        backdrop-filter: blur(20px) !important;
         border-right: 1px solid rgba(0, 242, 254, 0.15) !important;
-        backdrop-filter: blur(15px);
     }
-    
-    /* Glassmorphism Dynamic Cards */
-    .glass-card {
-        background: rgba(255, 255, 255, 0.03);
-        border: 1px solid rgba(255, 255, 255, 0.05);
-        border-left: 4px solid #00f2fe;
-        border-radius: 12px;
-        padding: 24px;
-        margin-bottom: 20px;
-        backdrop-filter: blur(10px);
-        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-        transition: transform 0.2s ease;
+    div[data-testid="stBlock"] {
+        background: rgba(255, 255, 255, 0.02) !important;
+        backdrop-filter: blur(12px) !important;
+        border-radius: 16px !important;
+        border: 1px solid rgba(255, 255, 255, 0.05) !important;
+        padding: 24px !important;
+        margin-bottom: 20px !important;
     }
-    .glass-card:hover {
-        transform: translateY(-2px);
-        border-color: rgba(0, 242, 254, 0.3);
+    h1, h2, h3 {
+        font-family: 'Space Grotesk', sans-serif !important;
+        font-weight: 700 !important;
+        letter-spacing: -0.5px !important;
     }
-    .purple-card { border-left-color: #9d4edd !important; }
-    .pink-card { border-left-color: #ff007f !important; }
-    
-    /* Typography settings */
-    .tech-title {
-        font-family: 'JetBrains Mono', monospace;
-        font-weight: 800;
-        letter-spacing: -1px;
-        background: linear-gradient(90deg, #00f2fe, #4facfe, #9d4edd);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        font-size: 2.6rem;
-        margin-bottom: 5px;
-    }
-    .tech-tag {
-        font-family: 'JetBrains Mono', monospace;
-        background: rgba(0, 242, 254, 0.1);
-        color: #00f2fe;
-        padding: 4px 10px;
-        border-radius: 4px;
-        font-size: 0.8rem;
-        border: 1px solid rgba(0, 242, 254, 0.2);
-    }
-    
-    /* Styled Variant Tables */
-    table {
-        background: transparent !important;
-        color: #e0e6ed !important;
-        border-collapse: collapse !important;
-    }
-    th {
-        background: rgba(0, 242, 254, 0.1) !important;
-        color: #00f2fe !important;
+    code, pre {
         font-family: 'JetBrains Mono', monospace !important;
+    }
+    .stButton>button {
+        background: linear-gradient(135deg, #ff007f 0%, #7928ca 100%) !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 8px !important;
+        font-weight: 600 !important;
+        letter-spacing: 0.5px !important;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        box-shadow: 0 4px 15px rgba(255, 0, 127, 0.3) !important;
+    }
+    .stButton>button:hover {
+        transform: translateY(-2px) !important;
+        box-shadow: 0 6px 20px rgba(255, 0, 127, 0.5) !important;
     }
     </style>
 """, unsafe_allow_html=True)
 
-# 2. APPLICATION HEADER DESIGN
-st.markdown('<div style="padding-top: 20px;"><span class="tech-tag">QUANTUM COMPUTATIONAL BIOLOGY v2.4</span></div>', unsafe_allow_html=True)
-st.markdown('<h1 class="tech-title">🧬 PolyRisk AI</h1>', unsafe_allow_html=True)
-st.markdown('<p style="color: #8a99ad; font-size: 1.1rem; margin-bottom: 30px;">Predictive Genomic Disease Risk Modeling Engine & Neural Phenotypic Mapping Matrix</p>', unsafe_allow_html=True)
+# -------------------------------------------------------------
+# 2. APPLICATION HEADER CORE
+# -------------------------------------------------------------
+st.markdown("""
+    <div style='margin-bottom: 35px;'>
+        <p style='font-family: monospace; color: #00f2fe; font-weight: bold; font-size: 11px; margin-bottom: 4px;'>
+            QUANTUM COMPUTATIONAL BIOLOGY v2.4 // ENGINE CORE
+        </p>
+        <h1 style='font-size: 42px; margin: 0; background: linear-gradient(to right, #fff, #8a99ad); -webkit-background-clip: text; -webkit-text-fill-color: transparent;'>
+            🧬 PolyRisk AI
+        </h1>
+        <p style='color: #8a99ad; font-size: 16px; margin-top: 5px; font-weight: 300;'>
+            Polygenic Risk Scoring & Machine Learning-Based Disease Susceptibility Prediction Engine
+        </p>
+    </div>
+""", unsafe_allow_html=True)
 
-# 3. SIDEBAR LAYOUT CONFIGURATION
+# -------------------------------------------------------------
+# 3. SIDEBAR COMPONENT: FILE INGESTION & CONFIGURATIONS
+# -------------------------------------------------------------
 with st.sidebar:
-    st.markdown('<div style="padding: 10px 0;"><h3 style="color:#00f2fe; font-family:\'JetBrains Mono\'">VARIANT INGESTION</h3></div>', unsafe_allow_html=True)
-    uploaded = st.file_uploader("Upload Target Sequenced Coordinates (VCF or CSV)", type=['vcf', 'csv'])
+    st.markdown("### 📥 Variant Ingestion Panel")
+    uploaded = st.file_uploader(
+        "Upload Target Sequenced Coordinates", 
+        type=["vcf", "csv"], 
+        help="Accepts clinical variants formatted as standard uncompressed VCF or flat CSV data matrix blocks."
+    )
     
-    st.markdown('---')
-    disease = st.selectbox('Target Pathology Panel', ['Type 2 Diabetes', 'Cardiovascular Disease'])
-    model_type = st.selectbox('Core Machine Learning Classifier', ['Random Forest', 'Gradient Boosting'])
+    st.markdown("---")
+    st.markdown("### ⚙️ Pipeline Tuning Matrices")
+    target_disease = st.selectbox(
+        "Select Target Pathology Evaluation",
+        ["Type 2 Diabetes (T2D)", "Cardiovascular Disease (CVD)", "Alzheimer's Disease (AD)"]
+    )
+    model_type = st.selectbox(
+        "Classification Engine Logic",
+        ["Gradient Boosting Matrix", "Random Forest Classifier", "Standard PRS Summation"]
+    )
     
-    st.markdown('---')
-    st.markdown('<small style="color:#63738a;">⚠️ DISCLAIMER: RESEARCH INTEGRATION PLATFORM PROTOCOL ONLY. NOT ACCREDITED FOR DIRECT DIAGNOSTIC PROCEDURES.</small>', unsafe_allow_html=True)
-    run_btn = st.button('Execute Engine Run Pipeline', type='primary', use_container_width=True)
+    st.markdown("---")
+    st.markdown("### 🧬 Quality Control Sieve (QC)")
+    maf_threshold = st.slider("Minor Allele Frequency (MAF)", 0.00, 0.10, 0.01, step=0.005)
+    call_rate = st.slider("Call Rate Filter Threshold", 0.80, 1.00, 0.95, step=0.01)
 
-# 4. REFERENCE FACTORY SEED FOR DISTRIBUTION MODELING
-@st.cache_data
-def get_mock_cohort_and_weights(target_panel):
-    np.random.seed(42)
-    pop_prs = pd.Series(np.random.normal(0.2, 1.1, 1000))
+# -------------------------------------------------------------
+# 4. DEFAULT SCREEN / INSTRUCTION MARGIN
+# -------------------------------------------------------------
+if uploaded is None:
+    st.info("💡 Operational Status: Awaiting Ingestion Array. Drop a sample .vcf or variant .csv inside the sidebar layout to initialize engine tasks.")
     
-    if target_panel == 'Type 2 Diabetes':
-        snps = ['rs7903146', 'rs1801282', 'rs5219', 'rs13266634', 'rs7754840', 'rs11605973', 'rs10946398', 'rs4402960', 'rs13271221', 'rs10811661']
-        betas = [0.142, 0.089, -0.071, 0.065, 0.058, 0.054, -0.051, 0.049, 0.044, -0.041]
-    else:
-        snps = ['rs1333049', 'rs6025', 'rs174547', 'rs20455', 'rs1042034', 'rs3798220', 'rs964184', 'rs11206510', 'rs2075650', 'rs646776']
-        betas = [0.185, 0.121, 0.095, -0.084, 0.076, -0.071, 0.068, 0.062, 0.055, -0.051]
-        
-    gwas_weights = pd.DataFrame({'rsid': snps, 'beta': betas})
-    return pop_prs, gwas_weights
+    col_info1, col_info2 = st.columns(2)
+    with col_info1:
+        st.markdown("""
+            ### 🛠️ Execution Requirements
+            Your sample variant files must explicitly present standard genomic position keys:
+            - **Uncompressed VCF Structure:** Conforming to spec arrays with valid header metadata nodes.
+            - **Flat CSV Matrix:** Must feature column declarations including `rsid`, `chrom`, `pos`, `ref`, `alt`, and `dosage` measurements.
+        """)
+    with col_info2:
+        st.markdown("""
+            ### 🔬 Prototype Engine Parameters
+            - **Core Process Engine:** Real-time alignment against vetted multi-locus GWAS weights.
+            - **Transparency Track:** Individual asset assessments backed by Shapley game-theoretic vector traces.
+        """)
 
-pop_prs, gwas_weights = get_mock_cohort_and_weights(disease)
-
+# -------------------------------------------------------------
 # 5. ANALYSIS EXECUTION & UI COMPONENT RENDERING
-if uploaded and run_btn:
-    with st.spinner('Synchronizing Bioinformatics QC Pipelines & Array Matrix Arrays...'):
-        
-# Force lower-case check to handle mobile upload naming quirks (.VCF vs .vcf)
-   file_name_lower = uploaded.name.lower()
-        
-if file_name_lower.endswith('.vcf') or '.vcf' in file_name_lower:
-            raw_df = parse_vcf(uploaded)
-     else:
-            raw_df = parse_csv_variants(uploaded)
-        
-            
-        qc_df = apply_qc(raw_df)
-        
-        if 'sample' not in qc_df.columns:
-            qc_df['sample'] = 'PATIENT_01'
-        
-        pivot_df = qc_df.pivot(index='sample', columns='rsid', values='dosage')
-        for snp in gwas_weights['rsid']:
-            if snp not in pivot_df.columns:
-                pivot_df[snp] = 1.0
-                
-        feature_df = build_feature_matrix(pivot_df, n_pcs=10)
-        
-        patient_prs_series = compute_prs(pivot_df, gwas_weights)
-        patient_prs = patient_prs_series.iloc[0]
-        pct = prs_percentile(patient_prs, pop_prs)
-        
-        X_train_sim = np.random.normal(0, 1, (100, len(feature_df.columns)))
-        y_train_sim = np.random.choice([0, 1], 100)
-        trained_pipe = train_risk_model(X_train_sim, y_train_sim, model_type='rf' if model_type == 'Random Forest' else 'gbm')
-        
-        pred_results = predict_risk(trained_pipe, feature_df.iloc[[0]])
-        prob_val = pred_results['probability']
-        label_val = pred_results['risk_label']
-        
-        shap_records = explain_prediction(trained_pipe, feature_df.iloc[[0]], feature_df.columns.tolist())
-
-        # --- DYNAMIC DASHBOARD FRONTEND BLOCK ---
-        m_col1, m_col2 = st.columns([1, 2])
-        
-        with m_col1:
-            st.markdown(f"""
-                <div class="glass-card {'pink-card' if label_val == 'HIGH' else 'purple-card'}">
-                    <p style="text-transform:uppercase; font-family:'JetBrains Mono'; font-size:0.85rem; color:#8a99ad; margin:0;">System Label Verdict</p>
-                    <h2 style="font-size:3rem; margin:10px 0; font-weight:800; color:{'#ff007f' if label_val == 'HIGH' else '#00f2fe'}">{label_val} RISK</h2>
-                    <span class="tech-tag">Confidence Metrics Validated</span>
-                </div>
-            """, unsafe_allow_html=True)
-            
-            dash_array = 2 * 3.14159 * 40
-            dash_offset = dash_array * (1 - prob_val)
-            color_hex = '#ff007f' if label_val == 'HIGH' else '#00f2fe'
-            
-            st.markdown(f"""
-                <div class="glass-card" style="text-align: center;">
-                    <p style="text-transform:uppercase; font-family:'JetBrains Mono'; font-size:0.85rem; color:#8a99ad; margin-bottom:15px;">Disease Susceptibility Index</p>
-                    <svg width="160" height="160" viewBox="0 0 100 100">
-                        <circle cx="50" cy="50" r="40" stroke="rgba(255,255,255,0.05)" stroke-width="6" fill="transparent" />
-                        <circle cx="50" cy="50" r="40" stroke="{color_hex}" stroke-width="6" fill="transparent"
-                                stroke-dasharray="{dash_array}" stroke-dashoffset="{dash_offset}"
-                                stroke-linecap="round" transform="rotate(-90 50 50)" style="transition: stroke-dashoffset 1s ease-in-out;" />
-                        <text x="50" y="55" text-anchor="middle" font-family="'JetBrains Mono'" font-size="14" font-weight="bold" fill="#e0e6ed">{prob_val:.1%}</text>
-                    </svg>
-                </div>
-            """, unsafe_allow_html=True)
-
-        with m_col2:
-            st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-            st.markdown('<p style="text-transform:uppercase; font-family:\'JetBrains Mono\'; font-size:0.85rem; color:#8a99ad; margin:0;">Relative Population Percentile Position</p>', unsafe_allow_html=True)
-            st.markdown(f'<h3 style="font-size:2.5rem; font-weight:700; color:#9d4edd; margin:10px 0;">{pct:.1f}th Percentile Rank</h3>', unsafe_allow_html=True)
-            
-            dist_fig = prs_distribution_chart(pop_prs, patient_prs)
-            st.plotly_chart(dist_fig, use_container_width=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-
-        st.markdown('<h3 style="color:#e0e6ed; font-family:\'JetBrains Mono\'; font-size:1.4rem; margin-top:20px; margin-bottom:15px;">⚡ Explainable AI Variant Explanations</h3>', unsafe_allow_html=True)
-        
-        vis_col1, vis_col2 = st.columns(2)
-        with vis_col1:
-            st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-            st.markdown('<h4>Model Vector Cascade Explanations (SHAP Waterfall)</h4>', unsafe_allow_html=True)
-            waterfall_fig = shap_waterfall_plotly(shap_records)
-            st.plotly_chart(waterfall_fig, use_container_width=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-            
-        with vis_col2:
-            st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-            st.markdown('<h4>AI-Powered Variant Interpretation Panel</h4>', unsafe_allow_html=True)
-            
-            top_record = shap_records[0]
-            st.markdown(f"""
-                <div style="background: rgba(0,0,0,0.2); padding: 15px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05); margin-bottom:15px;">
-                    <p style="color:#00f2fe; font-family:'JetBrains Mono'; margin:0 0 5px 0;">🎯 Principal Driver Detected: <b>{top_record['feature']}</b></p>
-                    <p style="margin:0; font-size:0.95rem; color:#b4c2d3;">This variant shows an allele configuration dosage value of <b>{top_record['dosage']}</b>, causing an adjustment of <b>{top_record['shap_value']:+.4f}</b> to the structural disease evaluation spectrum.</p>
-                </div>
-            """, unsafe_allow_html=True)
-            
-            display_records_df = pd.DataFrame(shap_records)[['feature', 'dosage', 'shap_value']]
-            st.dataframe(display_records_df, use_container_width=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        st.markdown('<h4>Manhattan-Style Array Matrix Structure Contribution Map</h4>', unsafe_allow_html=True)
-        
-        full_shap_df = pd.DataFrame({
-            'rsid': gwas_weights['rsid'],
-            'shap_value': [r['shap_value'] for r in shap_records] + list(np.random.normal(0, 0.01, len(gwas_weights) - len(shap_records))),
-            'pos': np.random.randint(10000, 500000, len(gwas_weights)),
-            'chrom': np.random.choice(['Chr 1', 'Chr 7', 'Chr 12', 'Chr 19'], len(gwas_weights))
-        })
-        manhattan_fig = manhattan_variant_plot(full_shap_df)
-        st.plotly_chart(manhattan_fig, use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        pdf_bytes = generate_pdf_report(pred_results, patient_prs, pct, shap_records)
-        st.download_button(
-            label="📥 Download Cryptographic Genomic Risk Report (PDF)",
-            data=pdf_bytes,
-            file_name="polyrisk_ai_report.pdf",
-            mime="application/pdf"
-        )
+# -------------------------------------------------------------
 else:
-    st.markdown("""
-        <div class="glass-card" style="text-align: center; padding: 60px 20px; border-style: dashed; border-width: 2px; border-color: rgba(0, 242, 254, 0.2);">
-            <h3 style="color: #63738a; font-family: 'JetBrains Mono', monospace;">AWAITING MOLECULAR DATA INPUT INGESTION</h3>
-            <p style="color: #4a5568; max-width: 500px; margin: 10px auto 0 auto;">Please provide valid uncompressed or BGZF structured genomic profiles within the sidebar command nodes to spin up diagnostic pipeline processors.</p>
-        </div>
-    """, unsafe_allow_html=True)
+    with st.spinner("⏳ Engine Processing... Parsing variants, managing quality-control parameters, and scoring classification vectors..."):
+        try:
+            # Safe lower-case transformation to fix mobile upload naming bugs
+            file_name_lower = uploaded.name.lower()
+            
+            # Direct to corresponding module engine based on name or contents
+            if file_name_lower.endswith('.vcf') or '.vcf' in file_name_lower:
+                raw_df = parse_vcf(uploaded)
+            else:
+                raw_df = parse_csv_variants(uploaded)
+            
+            # Execute Pipeline Sequence Modules
+            qc_df = run_quality_control(raw_df, maf_threshold, call_rate)
+            feature_matrix = build_feature_matrix(qc_df)
+            prs_score, percentile = calculate_prs_score(feature_matrix, target_disease)
+            risk_probability = predict_disease_risk(feature_matrix, target_disease, model_type)
+            shap_values, feature_names = generate_shap_values(feature_matrix, target_disease)
+            
+            # -------------------------------------------------------------
+            # METRIC METERS RENDER BLOCKS
+            # -------------------------------------------------------------
+            col_m1, col_m2, col_m3 = st.columns(3)
+            
+            with col_m1:
+                verdict = "HIGH RISK" if risk_probability >= 0.65 else ("MODERATE" if risk_probability >= 0.35 else "LOW RISK")
+                color_v = "#ff007f" if verdict == "HIGH RISK" else ("#ffaa00" if verdict == "MODERATE" else "#00f2fe")
+                st.markdown(f"""
+                    <div style='text-align: center;'>
+                        <p style='font-size: 11px; font-family: monospace; color: #8a99ad; margin: 0;'>SYSTEM DIAGNOSTIC VERDICT</p>
+                        <h2 style='color: {color_v}; font-size: 38px; margin: 10px 0;'>{verdict}</h2>
+                        <p style='font-size: 12px; color: #63738a; margin: 0;'>Confidence Status: Validated Array Matrix</p>
+                    </div>
+                """, unsafe_allow_html=True)
                 
+            with col_m2:
+                # Embedded high-end dynamic SVG progress ring meter
+                stroke_dash = int(2 * np.pi * 45)
+                filled_dash = int((risk_probability) * stroke_dash)
+                remain_dash = stroke_dash - filled_dash
+                
+                st.markdown(f"""
+                    <div style='text-align: center; position: relative;'>
+                        <p style='font-size: 11px; font-family: monospace; color: #8a99ad; margin: 0 0 5px 0;'>SUSCEPTIBILITY PROBABILITY</p>
+                        <svg width="100" height="100" viewBox="0 0 100 100">
+                            <circle cx="50" cy="50" r="45" fill="none" stroke="rgba(255,255,255,0.03)" stroke-width="7"/>
+                            <circle cx="50" cy="50" r="45" fill="none" stroke="#ff007f" stroke-width="6" 
+                                    stroke-dasharray="{filled_dash} {remain_dash}" stroke-linecap="round" transform="rotate(-90 50 50)"/>
+                            <text x="50" y="55" font-family="'JetBrains Mono', monospace" font-size="18" fill="#fff" font-weight="bold" text-anchor="middle">
+                                {risk_probability * 100:.1f}%
+                            </text>
+                        </svg>
+                    </div>
+                """, unsafe_allow_html=True)
+                
+            with col_m3:
+                st.markdown(f"""
+                    <div style='text-align: center;'>
+                        <p style='font-size: 11px; font-family: monospace; color: #8a99ad; margin: 0;'>POPULATION PERCENTILE</p>
+                        <h2 style='color: #ffffff; font-size: 38px; margin: 10px 0;'>{percentile}th</h2>
+                        <p style='font-size: 12px; color: #63738a; margin: 0;'>Relative positioning within global cohort scale</p>
+                    </div>
+                """, unsafe_allow_html=True)
+                
+            # -------------------------------------------------------------
+            # INTERACTIVE VISUALIZATION COMPONENT LAYOUTS
+            # -------------------------------------------------------------
+            st.markdown("### 📊 Distribution Profile Matrix & Genomic Loci Scans")
+            col_v1, col_v2 = st.columns([3, 2])
+            
+            with col_v1:
+                fig_dist = plot_cohort_distribution(prs_score, target_disease)
+                st.plotly_chart(fig_dist, use_container_width=True)
+                
+            with col_v2:
+                fig_man = plot_manhattan(qc_df)
+                st.plotly_chart(fig_man, use_container_width=True)
+                
+            # -------------------------------------------------------------
+            # EXPLAINABLE AI (SHAP ENGINE WATERFALL RENDER)
+            # -------------------------------------------------------------
+            st.markdown("### ⚡ AI-Powered Variant Interpretation (SHAP Overview)")
+            
+            shap_df = pd.DataFrame({'Variant Locus': feature_names, 'SHAP Value': shap_values})
+            shap_df['Direction'] = np.where(shap_df['SHAP Value'] > 0, 'Risk Driver (+)', 'Protective Node (-)')
+            shap_df = shap_df.sort_values(by='SHAP Value', key=abs, ascending=False).head(8)
+            
+            fig_shap = px.bar(
+                shap_df,
+                x='SHAP Value',
+                y='Variant Locus',
+                color='Direction',
+                orientation='h',
+                color_discrete_map={'Risk Driver (+)': '#ff007f', 'Protective Node (-)': '#00f2fe'},
+                template='plotly_dark'
+            )
+            fig_shap.update_layout(
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+                xaxis_title="Impact Score Dimension (Log-Odds Weighting)",
+                yaxis_title=None,
+                margin=dict(l=20, r=20, t=10, b=20),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            )
+            fig_shap.update_xaxes(showgrid=True, gridcolor='rgba(255,255,255,0.05)', zeroline=True, zerolinecolor='rgba(255,255,255,0.2)')
+            fig_shap.update_yaxes(showgrid=False)
+            st.plotly_chart(fig_shap, use_container_width=True)
+            
+            # -------------------------------------------------------------
+            # ASSET DISTRIBUTION ARCHIVE COMPILER (PDF DOWNLOAD)
+            # -------------------------------------------------------------
+            st.markdown("---")
+            st.markdown("### 🗃️ Client Export Center")
+            
+            pdf_bytes = generate_pdf_report(qc_df, risk_probability, percentile, target_disease, model_type)
+            st.download_button(
+                label="📥 Download Cryptographic PDF Research Summary",
+                data=pdf_bytes,
+                file_name=f"PolyRisk_AI_Report_{target_disease.split()[0]}.pdf",
+                mime="application/pdf"
+            )
+            
+        except Exception as e:
+            st.error(f"❌ Critical Pipeline Failure Event: {str(e)}")
+            st.exception(e)
+            
+        
