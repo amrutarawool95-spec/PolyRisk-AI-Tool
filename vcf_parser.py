@@ -143,4 +143,4 @@ def generate_synthetic_genome_block():
         'alt': np.random.choice(['A', 'C', 'G', 'T'], size=rows),
         'dosage': np.random.randint(0, 3, size=rows)
     })
-        
+    
