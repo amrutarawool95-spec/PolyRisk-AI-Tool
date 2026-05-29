@@ -128,10 +128,14 @@ pop_prs, gwas_weights = get_mock_cohort_and_weights(disease)
 if uploaded and run_btn:
     with st.spinner('Synchronizing Bioinformatics QC Pipelines & Array Matrix Arrays...'):
         
-        if uploaded.name.endswith('.vcf'):
+# Force lower-case check to handle mobile upload naming quirks (.VCF vs .vcf)
+   file_name_lower = uploaded.name.lower()
+        
+if file_name_lower.endswith('.vcf') or '.vcf' in file_name_lower:
             raw_df = parse_vcf(uploaded)
-        else:
+     else:
             raw_df = parse_csv_variants(uploaded)
+        
             
         qc_df = apply_qc(raw_df)
         
