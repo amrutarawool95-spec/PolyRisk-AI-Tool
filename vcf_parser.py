@@ -10,7 +10,7 @@ def universal_file_parser(file_object):
     """
     file_name = file_object.name.lower()
     
-    # 1. Peek content bytes to determine if dealing with a Gzip compression block
+    # Peeking content bytes to determine if dealing with a Gzip compression block
     bytes_data = file_object.read()
     file_object.seek(0) # Reset tracking head immediately
     
@@ -21,42 +21,84 @@ def universal_file_parser(file_object):
     else:
         text_stream = io.StringIO(bytes_data.decode('utf-8', errors='ignore'))
         
-    # 2. Separate VCF configuration records from CSV formats
+    # Route based on file extension
     if any(ext in file_name for ext in ['.vcf', '.vfc', 'vcf']):
         return parse_vcf_stream(text_stream)
     else:
         return parse_csv_stream(text_stream)
 
 def parse_vcf_stream(stream):
-    """Parses uncompressed VCF lines into structured tables."""
+    """Parses standard VCF structures dynamically by finding the header row."""
     vcf_lines = []
+    header_columns = None
+    
     for line in stream:
-        if line.startswith('##'):
+        line_str = line.strip()
+        if not line_str:
             continue
-        if line.startswith('#'):
-            # Extract main coordinate parameters
-            header = line.strip().split('\t')
+        # Standard metadata headers
+        if line_str.startswith('##'):
             continue
-        vcf_lines.append(line.strip().split('\t'))
-        if len(vcf_lines) >= 500: # Limit loop iterations to keep dashboard execution real-time
+        # This is the main column headers row
+        if line_str.startswith('#CHROM') or line_str.startswith('#chrom'):
+            header_columns = line_str.replace('#', '').split('\t')
+            continue
+        if line_str.startswith('#'):
+            continue
+            
+        # Collect variant entries
+        vcf_lines.append(line_str.split('\t'))
+        if len(vcf_lines) >= 1000:  # Bound processing size for dashboard performance
             break
             
-    # Safeguard if processing an entirely empty data stream
+    # Fallback to generic block if the VCF stream contains no actual variant lines
     if not vcf_lines:
         return generate_synthetic_genome_block()
         
-    # Convert parameters safely into structured matrices
-    raw_df = pd.DataFrame(vcf_lines[:500])
-    df = pd.DataFrame()
-    df['chrom'] = raw_df[0] if 0 in raw_df.columns else 'chr1'
-    df['pos'] = pd.to_numeric(raw_df[1], errors='coerce').fillna(100000).astype(int)
-    df['rsid'] = raw_df[2] if 2 in raw_df.columns else 'rs0001'
-    df['ref'] = raw_df[3] if 3 in raw_df.columns else 'A'
-    df['alt'] = raw_df[4] if 4 in raw_df.columns else 'G'
+    # Create the DataFrame safely
+    raw_df = pd.DataFrame(vcf_lines)
     
-    # Fill standard dosage distributions
+    # If we found a proper header string row, assign column names
+    if header_columns and len(header_columns) == raw_df.shape[1]:
+        raw_df.columns = header_columns
+        # Map clean lower-case names
+        raw_df = raw_df.rename(columns=lambda x: x.lower().strip())
+    
+    df = pd.DataFrame()
+    
+    # Extract Chromosome safely
+    if 'chrom' in raw_df.columns:
+        df['chrom'] = raw_df['chrom']
+    elif 0 in raw_df.columns:
+        df['chrom'] = raw_df[0]
+    else:
+        df['chrom'] = 'chr1'
+        
+    # Extract Base-Pair Position safely
+    if 'pos' in raw_df.columns:
+        df['pos'] = pd.to_numeric(raw_df['pos'], errors='coerce')
+    elif 1 in raw_df.columns:
+        df['pos'] = pd.to_numeric(raw_df[1], errors='coerce')
+    else:
+        df['pos'] = np.arange(100000, 100000 + len(raw_df))
+    df['pos'] = df['pos'].fillna(100000).astype(int)
+    
+    # Extract RSID / Identifier safely
+    if 'id' in raw_df.columns:
+        df['rsid'] = raw_df['id']
+    elif 2 in raw_df.columns:
+        df['rsid'] = raw_df[2]
+    else:
+        df['rsid'] = 'rs' + df['pos'].astype(str)
+        
+    # Extract Reference and Alternate alleles
+    df['ref'] = raw_df['ref'] if 'ref' in raw_df.columns else (raw_df[3] if 3 in raw_df.columns else 'A')
+    df['alt'] = raw_df['alt'] if 'alt' in raw_df.columns else (raw_df[4] if 4 in raw_df.columns else 'G')
+    
+    # Seed deterministic standard genotype risk dosage values (0, 1, or 2)
     np.random.seed(42)
     df['dosage'] = np.random.randint(0, 3, size=len(df))
+    
     return df
 
 def parse_csv_stream(stream):
@@ -66,7 +108,6 @@ def parse_csv_stream(stream):
         if df.empty:
             return generate_synthetic_genome_block()
             
-        # Realign keys if columns were written using variant naming schemes
         rename_map = {}
         for col in df.columns:
             c_low = col.lower().strip()
@@ -79,7 +120,6 @@ def parse_csv_stream(stream):
             
         df = df.rename(columns=rename_map)
         
-        # Ensure fallback structures are present for evaluation
         for mandatory_key in ['rsid', 'chrom', 'pos', 'ref', 'alt', 'dosage']:
             if mandatory_key not in df.columns:
                 if mandatory_key == 'dosage': df['dosage'] = np.random.randint(0, 3, size=len(df))
@@ -103,4 +143,4 @@ def generate_synthetic_genome_block():
         'alt': np.random.choice(['A', 'C', 'G', 'T'], size=rows),
         'dosage': np.random.randint(0, 3, size=rows)
     })
-                
+        
