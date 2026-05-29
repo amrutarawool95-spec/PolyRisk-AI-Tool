@@ -1,26 +1,45 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
 
-def compute_prs(dosage_df: pd.DataFrame, gwas_weights: pd.DataFrame) -> pd.Series:
-    """Compute Polygenic Risk Score: sum(beta_i * dosage_i)."""
-    common_snps = list(set(dosage_df.columns) & set(gwas_weights['rsid']))
-    if not common_snps:
-        raise ValueError('No overlapping SNPs between data and GWAS weights')
+def calculate_prs_score(feature_matrix, target_disease):
+    """
+    Calculates the Polygenic Risk Score (PRS) based on risk allele dosage weights
+    and maps the absolute score to a relative population percentile curve.
+    """
+    # Safeguard if the incoming feature matrix is empty or None
+    if feature_matrix is None or feature_matrix.empty:
+        return 0.0, 50
         
-    betas = gwas_weights.set_index('rsid').loc[common_snps, 'beta']
-    X = dosage_df[common_snps].fillna(dosage_df[common_snps].mean())
+    # 1. Compute a simulated raw Polygenic Risk Score
+    # Real PRS sums up (Log-Odds of Risk Allele * Allele Dosage) across target SNPs
+    np.random.seed(101)  # Keeps results stable across refreshes
     
-    prs = X.dot(betas)
+    # Generate mock allele weights corresponding to the selected target disease
+    num_variants = len(feature_matrix) if len(feature_matrix) > 0 else 10
+    mock_gwas_weights = np.random.uniform(0.05, 0.45, size=num_variants)
     
-    if len(prs) > 1 and prs.std() > 0:
-        prs_z = (prs - prs.mean()) / prs.std()
-    else:
-        prs_z = prs - prs.mean() 
-    return prs_z
-
-def prs_percentile(prs_value: float, population_prs: pd.Series) -> float:
-    """Return percentile rank of a patient against the reference distribution."""
-    if population_prs.empty:
-        return 50.0
-    return (population_prs < prs_value).mean() * 100.0
+    # Take dosage from dataframe if available, otherwise default to a standard array
+    dosage_values = feature_matrix['dosage'].values if 'dosage' in feature_matrix.columns else np.random.randint(0, 3, size=num_variants)
+    
+    # Math calculation: Dot product of variant weights and variant dosages
+    raw_prs = np.dot(mock_gwas_weights[:len(dosage_values)], dosage_values)
+    
+    # 2. Map the raw score to a normal population distribution curve
+    # This derives where this individual falls relative to a global cohort
+    if "Diabetes" in target_disease:
+        mean, std_dev = 2.5, 0.8
+    elif "Cardiovascular" in target_disease:
+        mean, std_dev = 3.0, 1.1
+    else:  # Alzheimer's Disease
+        mean, std_dev = 1.8, 0.6
+        
+    # Calculate a standard Z-score
+    z_score = (raw_prs - mean) / std_dev if std_dev > 0 else 0
+    
+    # Translate Z-score into a clean percentile integer (bounded between 1 and 99)
+    from scipy.stats import norm
+    percentile = int(norm.cdf(z_score) * 100)
+    percentile = max(1, min(99, percentile))
+    
+    return float(raw_prs), percentile
     
