@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-from vcf_parser import parse_vcf, parse_csv_variants
+from vcf_parser import universal_file_parser
 from qc_pipeline import run_quality_control
 from feature_engineering import build_feature_matrix
 from prs_calculator import calculate_prs_score
@@ -94,8 +94,8 @@ with st.sidebar:
     st.markdown("### 📥 Variant Ingestion Panel")
     uploaded = st.file_uploader(
         "Upload Target Sequenced Coordinates", 
-        type=["vcf", "csv"], 
-        help="Accepts clinical variants formatted as standard uncompressed VCF or flat CSV data matrix blocks."
+        type=["vcf", "csv", "gz", "vfc", "cvs"], 
+        help="Accepts clinical variants formatted as standard or compressed files."
     )
     
     st.markdown("---")
@@ -118,15 +118,15 @@ with st.sidebar:
 # 4. DEFAULT SCREEN / INSTRUCTION MARGIN
 # -------------------------------------------------------------
 if uploaded is None:
-    st.info("💡 Operational Status: Awaiting Ingestion Array. Drop a sample .vcf or variant .csv inside the sidebar layout to initialize engine tasks.")
+    st.info("💡 Operational Status: Awaiting Ingestion Array. Drop a sample format data matrix inside the sidebar layout to initialize engine tasks.")
     
     col_info1, col_info2 = st.columns(2)
     with col_info1:
         st.markdown("""
             ### 🛠️ Execution Requirements
             Your sample variant files must explicitly present standard genomic position keys:
-            - **Uncompressed VCF Structure:** Conforming to spec arrays with valid header metadata nodes.
-            - **Flat CSV Matrix:** Must feature column declarations including `rsid`, `chrom`, `pos`, `ref`, `alt`, and `dosage` measurements.
+            - **VCF / VCF.GZ Structure:** Conforming to genomic specification arrays containing variant nodes.
+            - **CSV Data Blocks:** Must feature column declarations including `rsid`, `chrom`, `pos`, `ref`, `alt`, and `dosage` measurements.
         """)
     with col_info2:
         st.markdown("""
@@ -139,16 +139,10 @@ if uploaded is None:
 # 5. ANALYSIS EXECUTION & UI COMPONENT RENDERING
 # -------------------------------------------------------------
 else:
-    with st.spinner("⏳ Engine Processing... Parsing variants, managing quality-control parameters, and scoring classification vectors..."):
+    with st.spinner("⏳ Engine Processing... Decompressing and parsing variant configurations..."):
         try:
-            # Safe lower-case transformation to fix mobile upload naming bugs
-            file_name_lower = uploaded.name.lower()
-            
-            # Direct to corresponding module engine based on name or contents
-            if file_name_lower.endswith('.vcf') or '.vcf' in file_name_lower:
-                raw_df = parse_vcf(uploaded)
-            else:
-                raw_df = parse_csv_variants(uploaded)
+            # Route through unified robust parsing layer
+            raw_df = universal_file_parser(uploaded)
             
             # Execute Pipeline Sequence Modules
             qc_df = run_quality_control(raw_df, maf_threshold, call_rate)
@@ -174,7 +168,6 @@ else:
                 """, unsafe_allow_html=True)
                 
             with col_m2:
-                # Embedded high-end dynamic SVG progress ring meter
                 stroke_dash = int(2 * np.pi * 45)
                 filled_dash = int((risk_probability) * stroke_dash)
                 remain_dash = stroke_dash - filled_dash
@@ -247,10 +240,10 @@ else:
             st.plotly_chart(fig_shap, use_container_width=True)
             
             # -------------------------------------------------------------
-            # ASSET DISTRIBUTION ARCHIVE COMPILER (PDF DOWNLOAD)
+            # PROGRAMMATIC PDF REPORT DOWNLOAD
             # -------------------------------------------------------------
             st.markdown("---")
-            st.markdown("### 🗃️ Client Export Center")
+            st.markdown("### 🗃️ Client Export Center center")
             
             pdf_bytes = generate_pdf_report(qc_df, risk_probability, percentile, target_disease, model_type)
             st.download_button(
@@ -263,5 +256,4 @@ else:
         except Exception as e:
             st.error(f"❌ Critical Pipeline Failure Event: {str(e)}")
             st.exception(e)
-            
-        
+                
